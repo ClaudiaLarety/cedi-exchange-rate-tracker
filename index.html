@@ -9,6 +9,8 @@
   body { font-family: Arial, sans-serif; max-width: 800px; margin: 30px auto; padding: 0 15px; }
   .rate { font-size: 2rem; font-weight: bold; margin: 0 0 20px; }
   #status { color: #b00020; }
+  #trend { font-weight: bold; }
+  .note { color: #666; font-size: 0.85rem; }
 </style>
 </head>
 <body>
@@ -17,12 +19,20 @@
 <p class="rate" id="rate">Loading...</p>
 <p id="status"></p>
 <canvas id="chart"></canvas>
+<p id="trend"></p>
+<p class="note">The forecast is a simple straight-line trend of the last 30 days. It is not financial advice.</p>
 
 <script>
 const API = "https://api.fxratesapi.com";
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
+}
+
+function addDays(dateStr, k) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + k);
+  return isoDate(d);
 }
 
 async function getLatest() {
@@ -47,19 +57,50 @@ async function getHistory(days) {
   };
 }
 
+function linearForecast(values, daysAhead) {
+  const n = values.length;
+  const meanX = (n - 1) / 2;
+  const meanY = values.reduce((a, b) => a + b, 0) / n;
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < n; i++) {
+    num += (i - meanX) * (values[i] - meanY);
+    den += (i - meanX) ** 2;
+  }
+  const slope = num / den;
+  const intercept = meanY - slope * meanX;
+  const forecast = [];
+  for (let k = 1; k <= daysAhead; k++) {
+    forecast.push(intercept + slope * (n - 1 + k));
+  }
+  return { forecast, slope };
+}
+
 function drawChart(labels, values) {
+  const { forecast, slope } = linearForecast(values, 7);
+  const lastLabel = labels[labels.length - 1];
+  const futureLabels = forecast.map((_, i) => addDays(lastLabel, i + 1));
+  const allLabels = labels.concat(futureLabels);
+
+  const historyData = values.concat(forecast.map(() => null));
+  const forecastData = values
+    .map((v, i) => (i === values.length - 1 ? v : null))
+    .concat(forecast);
+
   new Chart(document.getElementById("chart"), {
     type: "line",
     data: {
-      labels: labels,
-      datasets: [{
-        label: "GH₵ per US$1",
-        data: values,
-        borderColor: "#1b7f3b",
-        tension: 0.2
-      }]
+      labels: allLabels,
+      datasets: [
+        { label: "GH₵ per US$1", data: historyData, borderColor: "#1b7f3b", tension: 0.2 },
+        { label: "7-day trend forecast", data: forecastData, borderColor: "#e67e22", borderDash: [6, 6], tension: 0 }
+      ]
     }
   });
+
+  const direction = slope > 0 ? "weakening" : "strengthening";
+  document.getElementById("trend").textContent =
+    `Trend: the cedi is ${direction} by about GH₵${Math.abs(slope).toFixed(3)} per US$1 each day.`;
 }
 
 async function main() {
