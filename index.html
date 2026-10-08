@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cedi Exchange Rate Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 800px; margin: 30px auto; padding: 0 15px; }
+  .rate { font-size: 2rem; font-weight: bold; margin: 0 0 20px; }
+  #status { color: #b00020; }
+</style>
+</head>
+<body>
+<h1>Cedi Exchange Rate Tracker</h1>
+<p>1 US Dollar =</p>
+<p class="rate" id="rate">Loading...</p>
+<p id="status"></p>
+<canvas id="chart"></canvas>
+
+<script>
+const API = "https://api.fxratesapi.com";
+
+function isoDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+async function getLatest() {
+  const res = await fetch(`${API}/latest?base=USD&currencies=GHS`);
+  const data = await res.json();
+  if (!data.success) throw new Error("Could not load the latest rate");
+  return data.rates.GHS;
+}
+
+async function getHistory(days) {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - days);
+  const url = `${API}/timeseries?start_date=${isoDate(start)}&end_date=${isoDate(end)}&base=USD&currencies=GHS`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!data.success) throw new Error("Could not load the rate history");
+  const dates = Object.keys(data.rates).sort();
+  return {
+    labels: dates.map(d => d.slice(0, 10)),
+    values: dates.map(d => data.rates[d].GHS)
+  };
+}
+
+function drawChart(labels, values) {
+  new Chart(document.getElementById("chart"), {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "GH₵ per US$1",
+        data: values,
+        borderColor: "#1b7f3b",
+        tension: 0.2
+      }]
+    }
+  });
+}
+
+async function main() {
+  try {
+    const latest = await getLatest();
+    document.getElementById("rate").textContent = "GH₵ " + latest.toFixed(2);
+    const history = await getHistory(30);
+    drawChart(history.labels, history.values);
+  } catch (err) {
+    document.getElementById("rate").textContent = "Unavailable";
+    document.getElementById("status").textContent = err.message;
+  }
+}
+
+main();
+</script>
+</body>
+</html>
